@@ -1,10 +1,18 @@
 # citation-cleanup-tui
 
-[![tests](https://github.com/B0LK13/citation-cleanup-tui/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/B0LK13/citation-cleanup-tui/actions/workflows/tests.yml)
-
 Interactive PowerShell 7 TUI for finding and stripping unwanted regex
 artifacts (e.g. `:contentReference[oaicite:N]{index=N}`) from Markdown
 files in a directory tree.
+
+## Status
+
+| Workflow | Branch | Status |
+|---|---|---|
+| [`tests`](.github/workflows/tests.yml) | `main` | [![tests](https://github.com/B0LK13/citation-cleanup-tui/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/B0LK13/citation-cleanup-tui/actions/workflows/tests.yml) |
+
+The `tests` workflow runs the [Pester 5 suite](#4-pester-suite) on every
+push (any branch) and every pull request against `main`. Click the badge
+to view the latest runs.
 
 ## Run
 
