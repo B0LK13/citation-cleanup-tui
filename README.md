@@ -94,6 +94,120 @@ Notes:
 - It's listed in `.gitignore` so machine-specific paths and patterns never
   get committed.
 
+## Verifying the script
+
+There is no automated test suite yet. The checks below are what we run
+before each commit to catch the most common breakage.
+
+### 1. Parse check (no execution)
+
+Fastest sanity check — confirms the script has no syntax errors. Doesn't
+run any code, doesn't touch any files.
+
+```powershell
+pwsh -NoProfile -Command @'
+  $err = $null
+  [System.Management.Automation.Language.Parser]::ParseInput(
+    (Get-Content -Raw .\citation-cleanup-tui.ps1),
+    [ref]$null, [ref]$err) | Out-Null
+  if ($err -and $err.Count -gt 0) {
+    $err | ForEach-Object { "L$($_.Extent.StartLineNumber):$($_.Extent.StartColumnNumber) $($_.Message)" }
+    exit 1
+  } else { "PARSE_OK" }
+'@
+```
+
+Expected output: `PARSE_OK`. Any other output is a syntax error with a
+file location.
+
+### 2. Smoke test (end-to-end, on a disposable fixture)
+
+This exercises every menu action against a throwaway file, so you can run
+it without worrying about real notes. Run from the repo root.
+
+```powershell
+# Create a temp fixture with 3 known artifacts.
+$tmp = Join-Path $env:TEMP ('cleanup-smoke-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $tmp | Out-Null
+@"
+# Sample
+First paragraph. :contentReference[oaicite:0]{index=0}
+Two on one line :contentReference[oaicite:1]{index=1} :contentReference[oaicite:2]{index=2}
+Clean line.
+"@ | Set-Content -LiteralPath (Join-Path $tmp 'sample.md') -Encoding UTF8
+
+# Launch the TUI; in the menu:
+#   1 -> Configure: set Root to $tmp, accept other defaults, don't save
+#   2 -> Scan         (expect: 3 matches in 1 file)
+#   4 -> Dry-run      (expect: Removed=3 Status=DRY)
+#   5 -> Apply        (expect: Removed=3 Status=CLEAN)
+#   6 -> List backups (expect: 1 .bak file)
+#   7 -> Restore      (expect: Restored 1/1)
+#   8 -> Delete .bak  (expect: Deleted 1/1)
+#   q -> Quit         (expect: 'Bye.' and a clean exit)
+pwsh -File .\citation-cleanup-tui.ps1
+
+# Tear down.
+Remove-Item -LiteralPath $tmp -Recurse -Force
+```
+
+If any step shows `Status=FAILED`, the wrong removed count, or the script
+hangs at the `Choose:` prompt after `q`, that's a regression — please
+open an issue with the output.
+
+### 3. Repository integrity
+
+Quick checks that the working tree matches what's committed:
+
+```sh
+git fsck --full       # object-level integrity
+git status            # should be clean ("working tree clean")
+git log --oneline -5  # most recent commits
+```
+
+### 4. Adding automated tests (optional, for contributors)
+
+If you want to add real unit tests, [Pester 5+](https://pester.dev) is
+the standard. A minimal scaffold:
+
+```sh
+mkdir tests
+```
+
+```powershell
+# tests/Cleanup.Tests.ps1
+Describe 'Clean-One' {
+    BeforeAll {
+        # Dot-source only the function definitions — the script's main
+        # loop runs at the bottom, so guard or refactor it before this
+        # works as-is. One option: wrap the loop in `if (-not $env:CCTUI_TEST)`.
+        . $PSScriptRoot/../citation-cleanup-tui.ps1
+    }
+    It 'removes every match and produces CLEAN status' {
+        $f = New-TemporaryFile
+        ':contentReference[oaicite:0]{index=0} hi' | Set-Content $f
+        $cfg = [pscustomobject]@{
+            Pattern = ':contentReference\[oaicite:\d+\]\{index=\d+\}'
+            StripLeading = $true; TrimEol = $true
+        }
+        $r = Clean-One -Path $f -cfg $cfg
+        $r.Status   | Should -Be 'CLEAN'
+        $r.Removed  | Should -Be 1
+        Remove-Item $f
+    }
+}
+```
+
+Run with:
+
+```powershell
+Invoke-Pester ./tests
+```
+
+A PR that lands a Pester suite plus the necessary refactor (so the main
+loop doesn't run during dot-sourcing) is very welcome — see
+[Contributing](#contributing) below.
+
 ## Contributing
 
 Contributions are welcome — bug fixes, new actions, regex presets, docs
