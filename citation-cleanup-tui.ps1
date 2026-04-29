@@ -97,18 +97,23 @@ function Hdr    ($t) { Color $t '1;35' }      # magenta     - section headers
 function Load-Config {
     <#
     .SYNOPSIS
-        Load configuration from $ConfigPath, merging into $DefaultConfig.
+        Load configuration from $Path (default $ConfigPath), merging into
+        $DefaultConfig.
     .DESCRIPTION
         Returns a PSCustomObject with the full set of properties from
         $DefaultConfig. Any property present in the saved JSON overrides the
         default; properties missing from the JSON keep the default value.
         On any read/parse error, falls back to defaults and warns the user.
+    .PARAMETER Path
+        Override the config file path. Mainly useful for tests; production
+        callers can omit it and the script-level $ConfigPath is used.
     .OUTPUTS
         [pscustomobject] with the same shape as $DefaultConfig.
     #>
-    if (Test-Path -LiteralPath $ConfigPath) {
+    param([string]$Path = $ConfigPath)
+    if (Test-Path -LiteralPath $Path) {
         try {
-            $loaded = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
+            $loaded = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
             $merged = [pscustomobject]@{}
             # Iterate over DEFAULT keys (not loaded keys) so unknown keys in the
             # JSON are silently ignored and new defaults appear automatically.
@@ -124,13 +129,18 @@ function Load-Config {
     }
     return $DefaultConfig.PSObject.Copy()
 }
-function Save-Config([object]$cfg) {
+function Save-Config {
     <#
     .SYNOPSIS
-        Persist $cfg to $ConfigPath as pretty-printed UTF-8 JSON.
+        Persist $cfg to $Path (default $ConfigPath) as pretty-printed UTF-8 JSON.
+    .PARAMETER cfg
+        The configuration object to serialize.
+    .PARAMETER Path
+        Override the config file path. Mainly useful for tests.
     #>
-    $cfg | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $ConfigPath -Encoding UTF8
-    Write-Host (Good "Saved config -> $ConfigPath")
+    param([object]$cfg, [string]$Path = $ConfigPath)
+    $cfg | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $Path -Encoding UTF8
+    Write-Host (Good "Saved config -> $Path")
 }
 
 # ---------- File enumeration ----------
@@ -511,6 +521,11 @@ function Action-Help {
 #           and invalidated to @() after a successful apply.
 $cfg = Load-Config
 $hits = @()
+
+# When dot-sourced from the Pester suite (or any other test), set the
+# CCTUI_TEST env var BEFORE dot-sourcing so we only define functions and
+# constants without entering the interactive menu.
+if ($env:CCTUI_TEST) { return }
 
 # IMPORTANT: 'break' inside a switch only exits the switch. The :menu label
 # lets the 'q' branch use 'break menu' to actually exit the while loop.

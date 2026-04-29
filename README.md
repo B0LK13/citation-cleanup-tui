@@ -96,8 +96,12 @@ Notes:
 
 ## Verifying the script
 
-There is no automated test suite yet. The checks below are what we run
-before each commit to catch the most common breakage.
+A Pester 5 suite lives in [`tests/Cleanup.Tests.ps1`](tests/Cleanup.Tests.ps1)
+and covers every pure-logic function (`Build-LeadingPattern`, `Clean-One`,
+`Get-TargetFiles`, `Scan-Files`, `Get-Backups`, `Save-Config`,
+`Load-Config`). The interactive menu is guarded behind `$env:CCTUI_TEST`
+so dot-sourcing the script during tests is safe. The checks below are
+what we run before each commit — from cheapest to most thorough.
 
 ### 1. Parse check (no execution)
 
@@ -165,48 +169,43 @@ git status            # should be clean ("working tree clean")
 git log --oneline -5  # most recent commits
 ```
 
-### 4. Adding automated tests (optional, for contributors)
+### 4. Pester suite
 
-If you want to add real unit tests, [Pester 5+](https://pester.dev) is
-the standard. A minimal scaffold:
-
-```sh
-mkdir tests
-```
+The suite needs [Pester 5+](https://pester.dev). Install once if you
+don't have it:
 
 ```powershell
-# tests/Cleanup.Tests.ps1
-Describe 'Clean-One' {
-    BeforeAll {
-        # Dot-source only the function definitions — the script's main
-        # loop runs at the bottom, so guard or refactor it before this
-        # works as-is. One option: wrap the loop in `if (-not $env:CCTUI_TEST)`.
-        . $PSScriptRoot/../citation-cleanup-tui.ps1
-    }
-    It 'removes every match and produces CLEAN status' {
-        $f = New-TemporaryFile
-        ':contentReference[oaicite:0]{index=0} hi' | Set-Content $f
-        $cfg = [pscustomobject]@{
-            Pattern = ':contentReference\[oaicite:\d+\]\{index=\d+\}'
-            StripLeading = $true; TrimEol = $true
-        }
-        $r = Clean-One -Path $f -cfg $cfg
-        $r.Status   | Should -Be 'CLEAN'
-        $r.Removed  | Should -Be 1
-        Remove-Item $f
-    }
-}
+Install-Module Pester -MinimumVersion 5.0 -Scope CurrentUser
 ```
 
-Run with:
+Run from the repo root:
 
 ```powershell
-Invoke-Pester ./tests
+Invoke-Pester ./tests -Output Detailed
 ```
 
-A PR that lands a Pester suite plus the necessary refactor (so the main
-loop doesn't run during dot-sourcing) is very welcome — see
-[Contributing](#contributing) below.
+What it covers (13 tests, ~1.6 s):
+
+- `Build-LeadingPattern` — prefix toggle.
+- `Clean-One` — CLEAN / SKIP / DRY status, .bak creation, StripLeading
+  consumes preceding whitespace, TrimEol strips trailing whitespace.
+- `Get-TargetFiles` — Include glob + ExcludeDirs path-segment matching;
+  empty result when Root is missing.
+- `Scan-Files` — per-file match counts, clean files skipped.
+- `Get-Backups` — finds `*.bak` under Root, respects ExcludeDirs.
+- `Save-Config` / `Load-Config` — JSON roundtrip + default fallback for
+  missing keys (uses the `-Path` parameter to avoid touching the user's
+  real config).
+
+### 5. Adding more tests (contributors)
+
+The scaffold deliberately covers only pure-logic functions. Open
+`tests/Cleanup.Tests.ps1` and append a `Describe` (or an `It` inside an
+existing `Describe`). For filesystem fixtures, follow the existing
+pattern: a unique temp dir under `[System.IO.Path]::GetTempPath()`,
+cleaned up in `AfterAll` / `AfterEach`. For the config functions, pass
+`-Path $tmp` instead of relying on the script-level `$ConfigPath` (it
+lives in a different scope and can't be overridden cleanly from a test).
 
 ## Contributing
 
