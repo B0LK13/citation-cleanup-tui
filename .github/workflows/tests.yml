@@ -1,0 +1,75 @@
+name: tests
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  pester:
+    name: Pester (Windows / PowerShell 7)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Pester 5
+        shell: pwsh
+        run: |
+          $have5 = Get-Module -ListAvailable -Name Pester |
+                   Where-Object { $_.Version.Major -ge 5 }
+          if (-not $have5) {
+            Install-Module Pester -MinimumVersion 5.0.0 `
+                                  -Scope CurrentUser -Force -SkipPublisherCheck
+          }
+          $latest = Get-Module -ListAvailable -Name Pester |
+                    Sort-Object Version -Descending | Select-Object -First 1
+          "Pester version: $($latest.Version)"
+
+      - name: Parse check (citation-cleanup-tui.ps1)
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseInput(
+            (Get-Content -Raw .\citation-cleanup-tui.ps1),
+            [ref]$null, [ref]$errors) | Out-Null
+          if ($errors -and $errors.Count -gt 0) {
+            foreach ($e in $errors) {
+              # Surface as an annotation on the source file.
+              "::error file=citation-cleanup-tui.ps1,line=$($e.Extent.StartLineNumber),col=$($e.Extent.StartColumnNumber)::$($e.Message)"
+            }
+            exit 1
+          }
+          'PARSE_OK'
+
+      - name: Run Pester suite
+        shell: pwsh
+        run: |
+          Import-Module Pester -MinimumVersion 5.0
+
+          # Ensure the script's main loop is guarded out when dot-sourced
+          # (the suite sets this in BeforeAll too; belt and braces).
+          $env:CCTUI_TEST = '1'
+
+          $cfg = New-PesterConfiguration
+          $cfg.Run.Path                 = './tests'
+          $cfg.Run.Exit                 = $true       # non-zero exit on failure
+          $cfg.Output.Verbosity         = 'Detailed'
+          $cfg.TestResult.Enabled       = $true
+          $cfg.TestResult.OutputFormat  = 'NUnitXml'
+          $cfg.TestResult.OutputPath    = './pester-results.xml'
+
+          Invoke-Pester -Configuration $cfg
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pester-results
+          path: pester-results.xml
+          if-no-files-found: warn

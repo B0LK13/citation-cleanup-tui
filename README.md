@@ -1,5 +1,7 @@
 # citation-cleanup-tui
 
+[![tests](https://github.com/B0LK13/citation-cleanup-tui/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/B0LK13/citation-cleanup-tui/actions/workflows/tests.yml)
+
 Interactive PowerShell 7 TUI for finding and stripping unwanted regex
 artifacts (e.g. `:contentReference[oaicite:N]{index=N}`) from Markdown
 files in a directory tree.
@@ -183,6 +185,10 @@ Run from the repo root:
 ```powershell
 Invoke-Pester ./tests -Output Detailed
 ```
+
+The same suite runs on every push and pull request against `main` via
+GitHub Actions — see [`.github/workflows/tests.yml`](.github/workflows/tests.yml).
+Results are uploaded as a `pester-results` artifact (NUnit XML).
 
 What it covers (13 tests, ~1.6 s):
 
