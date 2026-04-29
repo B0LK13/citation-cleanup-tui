@@ -1,0 +1,5 @@
+# Backups produced by the TUI's "Apply clean" action.
+*.bak
+
+# Per-machine runtime configuration written by Save-Config.
+citation-cleanup-tui.config.json
